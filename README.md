@@ -60,6 +60,20 @@ The UI is powered by a backend API currently expected at `http://localhost:8000/
 npm install
 ```
 
+### Environment Variables
+
+Create local environment config from the example:
+
+```bash
+cp .env.example .env.local
+```
+
+Then set the API base URL:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000/api
+```
+
 ## Running the Application
 
 ### Start Development Server
@@ -105,8 +119,9 @@ frontend/
 
 ## Configuration Notes
 
-- API base URL is currently hardcoded in `src/api.js` as `http://localhost:8000/api`.
-- For multi-environment deployments, consider migrating this to a Vite env variable (for example `VITE_API_BASE_URL`).
+- API base URL is read from `VITE_API_BASE_URL` in `src/api.js`.
+- If `VITE_API_BASE_URL` is not set, the app falls back to `http://localhost:8000/api`.
+- For local development, use `.env.local` to override values without committing secrets.
 
 ## Troubleshooting
 
