@@ -192,7 +192,7 @@ function App() {
           <Activity className="w-8 h-8 text-blue-600" />
           <div>
             <h1 className="text-3xl font-bold text-slate-800">Stock Intelligence Platform</h1>
-            <p className="text-slate-500 mt-1 font-medium">{todayString} • Current Trend Window: 3 Days</p>
+            <p className="text-slate-500 mt-1 font-medium">{todayString}</p>
           </div>
         </div>
       </header>
@@ -203,7 +203,7 @@ function App() {
         <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           <div className="flex items-center gap-2 mb-6">
              <BarChart2 className="w-6 h-6 text-indigo-500" />
-             <h2 className="text-xl font-bold text-slate-800">Tech Stock Stocks</h2>
+             <h2 className="text-xl font-bold text-slate-800">Count of News Articles per Stock</h2>
           </div>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -222,7 +222,7 @@ function App() {
         <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           <div className="flex items-center gap-2 mb-6">
             <Flame className="w-6 h-6 text-orange-500" />
-            <h2 className="text-xl font-bold text-slate-800">Hottest Stocks (Sentiment x Volume)</h2>
+            <h2 className="text-xl font-bold text-slate-800">Tech Stock Watchlist</h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
