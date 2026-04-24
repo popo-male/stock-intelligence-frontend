@@ -1,7 +1,42 @@
 import { useState, useEffect } from 'react'
-import { Activity, TrendingUp, TrendingDown, Flame, ArrowLeft, Tag, Calendar, BarChart2, PieChart, Minus, DollarSign } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, ReferenceLine } from 'recharts'
+import { Activity, ActivitySquare, TrendingUp, TrendingDown, Flame, ArrowLeft, Tag, Calendar, BarChart2, PieChart, Minus, DollarSign } from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, ReferenceLine, Legend } from 'recharts'
 import { fetchHotStocks, fetchStockDetails, fetchStockTrend } from './api'
+
+// --- HELPER DICTIONARIES FOR UI ---
+const COMPANY_DOMAINS = {
+  'MSFT': 'microsoft.com',
+  'AMD': 'amd.com',
+  'PLTR': 'palantir.com',
+  'AAPL': 'apple.com',
+  'AMZN': 'amazon.com',
+  'NVDA': 'nvidia.com',
+  'GOOGL': 'google.com', 
+  'TSLA': 'tesla.com'
+};
+
+const TICKER_LOGO_OVERRIDES = {
+  // Force known-good brand marks for tickers that frequently resolve to wrong favicons.
+  AMD: [
+    'https://cdn.simpleicons.org/amd/ED1C24',
+    'https://logo.clearbit.com/amd.com',
+  ],
+  GOOGL: [
+    'https://cdn.simpleicons.org/google',
+    'https://logo.clearbit.com/google.com',
+  ],
+};
+
+const TICKER_COLORS = {
+  'MSFT': '#0ea5e9', // Sky Blue
+  'AMD': '#ef4444',  // Red
+  'PLTR': '#14b8a6', // Teal
+  'AAPL': '#64748b', // Slate
+  'AMZN': '#f59e0b', // Amber
+  'NVDA': '#84cc16', // Lime Green
+  'GOOGL': '#3b82f6',// Blue
+  'TSLA': '#ec4899'  // Pink
+};
 
 const getLast7Days = () => {
   return Array.from({length: 7}, (_, i) => {
@@ -11,8 +46,43 @@ const getLast7Days = () => {
   });
 };
 
+const getLogoCandidates = (ticker) => {
+  const domain = COMPANY_DOMAINS[ticker];
+  if (!domain) {
+    return TICKER_LOGO_OVERRIDES[ticker] || [];
+  }
+
+  const overrideCandidates = TICKER_LOGO_OVERRIDES[ticker] || [];
+
+  return [
+    ...overrideCandidates,
+    `https://logo.clearbit.com/${domain}`,
+    `https://www.google.com/s2/favicons?domain=${domain}&sz=128`,
+    `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+  ];
+};
+
+const getFallbackAvatar = (ticker) => `https://ui-avatars.com/api/?name=${ticker}&background=f1f5f9&color=64748b`;
+
+const handleLogoError = (event, ticker) => {
+  const img = event.currentTarget;
+  const candidates = getLogoCandidates(ticker);
+  const currentIndex = Number(img.dataset.logoIndex || 0);
+  const nextIndex = currentIndex + 1;
+
+  if (nextIndex < candidates.length) {
+    img.dataset.logoIndex = String(nextIndex);
+    img.src = candidates[nextIndex];
+    return;
+  }
+
+  img.onerror = null;
+  img.src = getFallbackAvatar(ticker);
+};
+
 function App() {
   const [hotStocks, setHotStocks] = useState([])
+  const [dashboardMetrics, setDashboardMetrics] = useState({ todayVolumes: [], combinedTrends: [] })
   const [loading, setLoading] = useState(true)
   
   const [selectedTicker, setSelectedTicker] = useState(null)
@@ -24,11 +94,41 @@ function App() {
   const [selectedDate, setSelectedDate] = useState(null);
 
   const todayString = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const todayISO = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     const loadData = async () => {
       const data = await fetchHotStocks()
-      setHotStocks(data.leaderboard || [])
+      const stocks = data.leaderboard || [];
+      setHotStocks(stocks)
+      
+      const [todayDetails, allTrends] = await Promise.all([
+         Promise.all(stocks.map(s => fetchStockDetails(s.ticker, todayISO))),
+         Promise.all(stocks.map(s => fetchStockTrend(s.ticker)))
+      ]);
+
+      const volumes = stocks.map((s, i) => {
+         const detail = todayDetails[i];
+         // Only count it if the backend actually resolved to TODAY (ignores the 30-day fallback)
+         const isActuallyToday = detail?.resolved_date === todayISO;
+         return {
+             ticker: s.ticker,
+             today_mention_count: isActuallyToday ? detail.total_articles : 0
+         };
+      });
+
+      const datesReversed = [...availableDates].reverse();
+      const combined = datesReversed.map(date => {
+         let point = { date };
+         stocks.forEach((stock, i) => {
+            const trendList = allTrends[i]?.trend || [];
+            const dayData = trendList.find(t => t.date === date);
+            point[stock.ticker] = dayData ? dayData.average_sentiment : null;
+         });
+         return point;
+      });
+
+      setDashboardMetrics({ todayVolumes: volumes, combinedTrends: combined });
       setLoading(false)
     }
     loadData()
@@ -63,20 +163,19 @@ function App() {
           </button>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            {/* 7-Day Trend Chart (Takes up 2/3 of space) */}
-            <div className="lg:col-span-2 min-w-0 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                   <TrendingUp className="w-5 h-5 text-blue-600" /> 7-Day Sentiment Trend ({selectedTicker})
                </h2>
-               <div className="h-56 w-full min-w-0">
-                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
+               <div className="h-56 w-full">
+                 <ResponsiveContainer width="100%" height="100%">
                    <LineChart data={stockTrend}>
                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                      <XAxis dataKey="date" tick={{fontSize: 12, fill: '#64748b'}} />
                      <YAxis domain={[-1, 1]} tick={{fontSize: 12, fill: '#64748b'}} />
                      <RechartsTooltip />
                      <ReferenceLine y={0} stroke="#94a3b8" />
-                     <Line type="monotone" dataKey="average_sentiment" stroke="#3b82f6" strokeWidth={3} dot={{r: 4, fill: '#3b82f6'}} />
+                     <Line type="monotone" dataKey="average_sentiment" stroke={TICKER_COLORS[selectedTicker]} strokeWidth={3} dot={{r: 4, fill: TICKER_COLORS[selectedTicker]}} />
                    </LineChart>
                  </ResponsiveContainer>
                </div>
@@ -84,7 +183,16 @@ function App() {
 
             {/* Daily Stats Card (Takes up 1/3 of space) */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-center border-t-4 border-t-blue-500">
-               <h1 className="text-4xl font-extrabold text-slate-800 mb-2">{stockDetails?.ticker}</h1>
+               <div className="flex items-center gap-4 mb-4">
+                 <img
+                   src={getLogoCandidates(selectedTicker)[0] || getFallbackAvatar(selectedTicker)}
+                   data-logo-index="0"
+                   alt={selectedTicker}
+                   className="w-12 h-12 rounded-full border border-slate-200"
+                   onError={(e) => handleLogoError(e, selectedTicker)}
+                 />
+                 <h1 className="text-4xl font-extrabold text-slate-800">{stockDetails?.ticker}</h1>
+               </div>
                <div className="text-sm text-slate-500 mb-4">
                  {stockDetails?.total_articles} articles analyzed on <br/>
                  <span className="font-bold text-slate-700">{stockDetails?.resolved_date}</span>
@@ -196,40 +304,60 @@ function App() {
         
         {/* TOP ROW: Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+           {/* ... [Keep your 4 top summary cards exactly the same] ... */}
            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center gap-4">
               <div className="p-3 bg-blue-100 text-blue-600 rounded-lg"><PieChart className="w-6 h-6" /></div>
-              <div>
-                <div className="text-sm text-slate-500 font-semibold">Tracked Stocks</div>
-                <div className="text-2xl font-bold text-slate-800">{hotStocks.length}</div>
-              </div>
+              <div><div className="text-sm text-slate-500 font-semibold">Tracked Stocks</div><div className="text-2xl font-bold text-slate-800">{hotStocks.length}</div></div>
            </div>
            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center gap-4">
               <div className="p-3 bg-green-100 text-green-600 rounded-lg"><TrendingUp className="w-6 h-6" /></div>
-              <div>
-                <div className="text-sm text-slate-500 font-semibold">Bullish Sentiment</div>
-                <div className="text-2xl font-bold text-green-600">{bullishCount}</div>
-              </div>
+              <div><div className="text-sm text-slate-500 font-semibold">Bullish Sentiment</div><div className="text-2xl font-bold text-green-600">{bullishCount}</div></div>
            </div>
            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center gap-4">
               <div className="p-3 bg-red-100 text-red-600 rounded-lg"><TrendingDown className="w-6 h-6" /></div>
-              <div>
-                <div className="text-sm text-slate-500 font-semibold">Bearish Sentiment</div>
-                <div className="text-2xl font-bold text-red-600">{bearishCount}</div>
-              </div>
+              <div><div className="text-sm text-slate-500 font-semibold">Bearish Sentiment</div><div className="text-2xl font-bold text-red-600">{bearishCount}</div></div>
            </div>
            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center gap-4">
               <div className="p-3 bg-slate-100 text-slate-600 rounded-lg"><Minus className="w-6 h-6" /></div>
-              <div>
-                <div className="text-sm text-slate-500 font-semibold">Neutral Sentiment</div>
-                <div className="text-2xl font-bold text-slate-700">{neutralCount}</div>
-              </div>
+              <div><div className="text-sm text-slate-500 font-semibold">Neutral Sentiment</div><div className="text-2xl font-bold text-slate-700">{neutralCount}</div></div>
            </div>
         </div>
 
-        {/* MIDDLE ROW: 2-Column Grid (Chart + Hotness Grid) */}
+        {/* NEW ROW: Combined Sentiment Line Chart */}
+        <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+           <div className="flex items-center gap-2 mb-6">
+              <ActivitySquare className="w-5 h-5 text-purple-500" />
+              <h2 className="text-lg font-bold text-slate-800">Stock Sentiment Trajectory</h2>
+           </div>
+           <div className="h-72 w-full">
+             <ResponsiveContainer width="100%" height="100%">
+               <LineChart data={dashboardMetrics.combinedTrends} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                 <XAxis dataKey="date" tick={{fontSize: 12, fill: '#64748b'}} />
+                 <YAxis domain={[-1, 1]} tick={{fontSize: 12, fill: '#64748b'}} />
+                 <RechartsTooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+                 <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }} />
+                 <ReferenceLine y={0} stroke="#94a3b8" />
+                 {hotStocks.map(stock => (
+                   <Line 
+                     key={stock.ticker} 
+                     type="monotone" 
+                     dataKey={stock.ticker} 
+                     stroke={TICKER_COLORS[stock.ticker]} 
+                     strokeWidth={2} 
+                     dot={{r: 3, fill: TICKER_COLORS[stock.ticker]}} 
+                     connectNulls 
+                   />
+                 ))}
+               </LineChart>
+             </ResponsiveContainer>
+           </div>
+        </section>
+
+        {/* MIDDLE ROW: 2-Column Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
-          {/* Left Column: Mentions Chart */}
+          {/* Left Column: Mentions Chart (NOW ONLY TODAY) */}
           <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <div className="flex items-center gap-2 mb-6">
                <BarChart2 className="w-5 h-5 text-indigo-500" />
@@ -237,18 +365,18 @@ function App() {
             </div>
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={hotStocks} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} layout="vertical">
+                <BarChart data={dashboardMetrics.todayVolumes} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0"/>
-                  <XAxis type="number" tick={{fontSize: 12, fill: '#64748b'}} />
+                  <XAxis type="number" tick={{fontSize: 12, fill: '#64748b'}} allowDecimals={false} />
                   <YAxis dataKey="ticker" type="category" tick={{fontSize: 12, fill: '#64748b', fontWeight: 'bold'}} width={60}/>
                   <RechartsTooltip cursor={{fill: '#f1f5f9'}} />
-                  <Bar dataKey="mention_count" fill="#6366f1" radius={[0, 4, 4, 0]} name="News Articles" />
+                  <Bar dataKey="today_mention_count" fill="#6366f1" radius={[0, 4, 4, 0]} name="Articles Today" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </section>
 
-          {/* Right Column: Mini Watchlist Grid */}
+          {/* Right Column: Mini Watchlist Grid (NOW WITH TEXT LABELS) */}
           <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
             <div className="flex items-center gap-2 mb-4">
               <Flame className="w-5 h-5 text-orange-500" />
@@ -256,19 +384,29 @@ function App() {
             </div>
             <div className="grid grid-cols-2 gap-3 overflow-y-auto flex-grow pr-2">
               {hotStocks.map((stock) => {
-                const isBullish = stock.average_sentiment > 0;
+                const isBullish = stock.average_sentiment >= 0.05;
+                const isBearish = stock.average_sentiment <= -0.05;
+                const isNeutral = !isBullish && !isBearish;
+
                 return (
-                  <div 
-                    key={stock.ticker} 
-                    onClick={() => handleStockClick(stock.ticker)}
-                    className="p-3 border border-slate-100 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all cursor-pointer bg-slate-50"
-                  >
-                    <div className="flex justify-between items-center mb-1">
+                  <div key={stock.ticker} onClick={() => handleStockClick(stock.ticker)} className="p-3 border border-slate-100 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all cursor-pointer bg-slate-50 flex flex-col justify-between">
+                    <div className="flex justify-between items-center mb-2">
                       <span className="text-lg font-extrabold text-slate-800">{stock.ticker}</span>
-                      {isBullish ? <TrendingUp className="w-4 h-4 text-green-500" /> : <TrendingDown className="w-4 h-4 text-red-500" />}
+                      
+                      {/* NEW EXPLICIT TEXT BADGES */}
+                      <div className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] uppercase tracking-wide font-bold ${
+                        isBullish ? 'bg-green-100 text-green-700' : 
+                        isBearish ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {isBullish && <TrendingUp className="w-3 h-3" />}
+                        {isBearish && <TrendingDown className="w-3 h-3" />}
+                        {isNeutral && <Minus className="w-3 h-3" />}
+                        {isBullish ? 'Bullish' : isBearish ? 'Bearish' : 'Neutral'}
+                      </div>
+
                     </div>
                     <div className="text-xs text-slate-500">
-                      Score: <span className={`font-bold ${isBullish ? 'text-green-600' : 'text-red-600'}`}>{stock.average_sentiment.toFixed(2)}</span>
+                      Score: <span className={`font-bold ${isBullish ? 'text-green-600' : isBearish ? 'text-red-600' : 'text-slate-600'}`}>{stock.average_sentiment.toFixed(2)}</span>
                     </div>
                   </div>
                 )
@@ -278,7 +416,7 @@ function App() {
 
         </div>
 
-        {/* BOTTOM ROW: Data Table */}
+        {/* BOTTOM ROW: Data Table (NOW WITH LOGOS) */}
         <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
            <div className="p-5 border-b border-slate-200 flex items-center gap-2 bg-slate-50">
              <DollarSign className="w-5 h-5 text-emerald-600" />
@@ -288,7 +426,7 @@ function App() {
              <table className="w-full text-left text-sm text-slate-600">
                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 uppercase text-xs font-bold">
                  <tr>
-                   <th className="px-6 py-4">Stock Ticker</th>
+                   <th className="px-6 py-4">STOCK</th>
                    <th className="px-6 py-4">Last Price</th>
                    <th className="px-6 py-4">Open Price</th>
                    <th className="px-6 py-4">Change (%)</th>
@@ -301,10 +439,22 @@ function App() {
                    const isPositive = stock.price_change_pct > 0;
                    return (
                      <tr key={stock.ticker} className={`border-b border-slate-100 hover:bg-slate-50 ${idx === hotStocks.length - 1 ? 'border-none' : ''}`}>
-                       <td className="px-6 py-4 font-bold text-slate-800">{stock.ticker}</td>
-                       <td className="px-6 py-4">${stock.current_price?.toLocaleString() || '-'}</td>
+                       <td className="px-6 py-4">
+                          {/* NEW LOGO IMPLEMENTATION */}
+                          <div className="flex items-center gap-3">
+                             <img
+                               src={getLogoCandidates(stock.ticker)[0] || getFallbackAvatar(stock.ticker)}
+                               data-logo-index="0"
+                               alt={stock.ticker}
+                               className="w-7 h-7 rounded-full bg-white border border-slate-200 object-contain"
+                               onError={(e) => handleLogoError(e, stock.ticker)}
+                             />
+                             <span className="font-bold text-slate-800">{stock.ticker}</span>
+                          </div>
+                       </td>
+                       <td className="px-6 py-4 font-medium">${stock.current_price?.toLocaleString() || '-'}</td>
                        <td className="px-6 py-4">${stock.open_price?.toLocaleString() || '-'}</td>
-                       <td className={`px-6 py-4 font-semibold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                       <td className={`px-6 py-4 font-bold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
                          {isPositive ? '+' : ''}{stock.price_change_pct || 0}%
                        </td>
                        <td className="px-6 py-4">{stock.volume?.toLocaleString() || '-'}</td>
