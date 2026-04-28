@@ -16,7 +16,6 @@ const COMPANY_DOMAINS = {
 };
 
 const TICKER_LOGO_OVERRIDES = {
-  // Force known-good brand marks for tickers that frequently resolve to wrong favicons.
   AMD: [
     'https://cdn.simpleicons.org/amd/ED1C24',
     'https://logo.clearbit.com/amd.com',
@@ -28,14 +27,14 @@ const TICKER_LOGO_OVERRIDES = {
 };
 
 const TICKER_COLORS = {
-  'MSFT': '#0ea5e9', // Sky Blue
-  'AMD': '#ef4444',  // Red
-  'PLTR': '#14b8a6', // Teal
-  'AAPL': '#64748b', // Slate
-  'AMZN': '#f59e0b', // Amber
-  'NVDA': '#84cc16', // Lime Green
-  'GOOGL': '#3b82f6',// Blue
-  'TSLA': '#ec4899'  // Pink
+  'MSFT': '#0ea5e9',
+  'AMD': '#ef4444', 
+  'PLTR': '#14b8a6',
+  'AAPL': '#64748b',
+  'AMZN': '#f59e0b',
+  'NVDA': '#84cc16',
+  'GOOGL': '#3b82f6',
+  'TSLA': '#ec4899' 
 };
 
 const getLast7Days = () => {
@@ -82,7 +81,7 @@ const handleLogoError = (event, ticker) => {
 
 function App() {
   const [hotStocks, setHotStocks] = useState([])
-  const [dashboardMetrics, setDashboardMetrics] = useState({ todayVolumes: [], combinedTrends: [] })
+  const [combinedTrends, setCombinedTrends] = useState([]) // SIMPLIFIED STATE
   const [loading, setLoading] = useState(true)
   
   const [selectedTicker, setSelectedTicker] = useState(null)
@@ -96,7 +95,6 @@ function App() {
   const [selectedDate, setSelectedDate] = useState(null);
 
   const todayString = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const todayISO = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     const loadData = async () => {
@@ -104,20 +102,8 @@ function App() {
       const stocks = data.leaderboard || [];
       setHotStocks(stocks)
       
-      const [todayDetails, allTrends] = await Promise.all([
-         Promise.all(stocks.map(s => fetchStockDetails(s.ticker, todayISO))),
-         Promise.all(stocks.map(s => fetchStockTrend(s.ticker)))
-      ]);
-
-      const volumes = stocks.map((s, i) => {
-         const detail = todayDetails[i];
-         // Only count it if the backend actually resolved to TODAY (ignores the 30-day fallback)
-         const isActuallyToday = detail?.resolved_date === todayISO;
-         return {
-             ticker: s.ticker,
-             today_mention_count: isActuallyToday ? detail.total_articles : 0
-         };
-      });
+      // Removed redundant fetching! Just getting trends for the big line chart.
+      const allTrends = await Promise.all(stocks.map(s => fetchStockTrend(s.ticker)));
 
       const datesReversed = [...availableDates].reverse();
       const combined = datesReversed.map(date => {
@@ -130,7 +116,7 @@ function App() {
          return point;
       });
 
-      setDashboardMetrics({ todayVolumes: volumes, combinedTrends: combined });
+      setCombinedTrends(combined);
       setLoading(false)
     }
     loadData()
@@ -141,6 +127,7 @@ function App() {
     setRankDate(newDate);
     setRankLoading(true);
     
+    // Fetching the new date automatically brings down the correct `mention_count`!
     const data = await fetchHotStocks(newDate);
     setHotStocks(data.leaderboard || []);
     
@@ -176,12 +163,13 @@ function App() {
           </button>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            {/* 7-Day Trend Chart (Takes up 2/3 of space) */}
+            <div className="lg:col-span-2 min-w-0 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                   <TrendingUp className="w-5 h-5 text-blue-600" /> 7-Day Sentiment Trend ({selectedTicker})
                </h2>
-               <div className="h-56 w-full">
-                 <ResponsiveContainer width="100%" height="100%">
+               <div className="h-56 w-full min-w-0">
+                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
                    <LineChart data={stockTrend}>
                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                      <XAxis dataKey="date" tick={{fontSize: 12, fill: '#64748b'}} />
@@ -194,14 +182,14 @@ function App() {
                </div>
             </div>
 
-            {/* Daily Stats Card (Takes up 1/3 of space) */}
+            {/* Daily Stats Card */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-center border-t-4 border-t-blue-500">
                <div className="flex items-center gap-4 mb-4">
                  <img
                    src={getLogoCandidates(selectedTicker)[0] || getFallbackAvatar(selectedTicker)}
                    data-logo-index="0"
                    alt={selectedTicker}
-                   className="w-12 h-12 rounded-full border border-slate-200"
+                   className="w-12 h-12 rounded-full border border-slate-200 object-contain"
                    onError={(e) => handleLogoError(e, selectedTicker)}
                  />
                  <h1 className="text-4xl font-extrabold text-slate-800">{stockDetails?.ticker}</h1>
@@ -317,7 +305,6 @@ function App() {
         
         {/* TOP ROW: Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-           {/* ... [Keep your 4 top summary cards exactly the same] ... */}
            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center gap-4">
               <div className="p-3 bg-blue-100 text-blue-600 rounded-lg"><PieChart className="w-6 h-6" /></div>
               <div><div className="text-sm text-slate-500 font-semibold">Tracked Stocks</div><div className="text-2xl font-bold text-slate-800">{hotStocks.length}</div></div>
@@ -344,7 +331,7 @@ function App() {
            </div>
            <div className="h-72 w-full">
              <ResponsiveContainer width="100%" height="100%">
-               <LineChart data={dashboardMetrics.combinedTrends} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+               <LineChart data={combinedTrends} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                  <XAxis dataKey="date" tick={{fontSize: 12, fill: '#64748b'}} />
                  <YAxis domain={[-1, 1]} tick={{fontSize: 12, fill: '#64748b'}} />
@@ -370,20 +357,23 @@ function App() {
         {/* MIDDLE ROW: 2-Column Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
-          {/* Left Column: Mentions Chart (NOW ONLY TODAY) */}
+          {/* Left Column: Mentions Chart (SYNCHRONIZED WITH DATE DROPDOWN) */}
           <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <div className="flex items-center gap-2 mb-6">
                <BarChart2 className="w-5 h-5 text-indigo-500" />
-               <h2 className="text-lg font-bold text-slate-800">News Volume</h2>
+               <h2 className="text-lg font-bold text-slate-800">
+                 News Volume <span className="text-sm font-medium text-slate-500">({rankDate === availableDates[0] ? 'Today' : rankDate})</span>
+               </h2>
             </div>
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dashboardMetrics.todayVolumes} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} layout="vertical">
+                <BarChart data={hotStocks} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0"/>
                   <XAxis type="number" tick={{fontSize: 12, fill: '#64748b'}} allowDecimals={false} />
                   <YAxis dataKey="ticker" type="category" tick={{fontSize: 12, fill: '#64748b', fontWeight: 'bold'}} width={60}/>
                   <RechartsTooltip cursor={{fill: '#f1f5f9'}} />
-                  <Bar dataKey="today_mention_count" fill="#6366f1" radius={[0, 4, 4, 0]} name="Articles Today" />
+                  {/* Now mapping directly to mention_count from the hotStocks state */}
+                  <Bar dataKey="mention_count" fill="#6366f1" radius={[0, 4, 4, 0]} name="Articles" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -397,7 +387,7 @@ function App() {
                 <h2 className="text-lg font-bold text-slate-800">Sentiment Rank</h2>
               </div>
               
-              {/* NEW DATE SELECTOR */}
+              {/* DATE SELECTOR */}
               <select 
                 value={rankDate} 
                 onChange={handleRankDateChange}
@@ -412,7 +402,6 @@ function App() {
               </select>
             </div>
 
-            {/* Optional Loading Overlay for smooth UX */}
             {rankLoading && (
               <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] flex items-center justify-center z-10 rounded-xl">
                 <div className="text-sm font-bold text-slate-500 animate-pulse">Calculating...</div>
@@ -427,8 +416,6 @@ function App() {
 
                 return (
                   <div key={stock.ticker} onClick={() => handleStockClick(stock.ticker)} className="p-3 border border-slate-100 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all cursor-pointer bg-slate-50 flex flex-col justify-between">
-                    
-                    {/* MOBILE FIX: flex-wrap ensures badge drops down gracefully if space is tight */}
                     <div className="flex flex-wrap justify-between items-start gap-1.5 mb-2">
                       <span className="text-lg font-extrabold text-slate-800 leading-none">{stock.ticker}</span>
                       
@@ -454,7 +441,7 @@ function App() {
 
         </div>
 
-        {/* BOTTOM ROW: Data Table (NOW WITH LOGOS) */}
+        {/* BOTTOM ROW: Data Table */}
         <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
            <div className="p-5 border-b border-slate-200 flex items-center gap-2 bg-slate-50">
              <DollarSign className="w-5 h-5 text-emerald-600" />
@@ -478,7 +465,6 @@ function App() {
                    return (
                      <tr key={stock.ticker} className={`border-b border-slate-100 hover:bg-slate-50 ${idx === hotStocks.length - 1 ? 'border-none' : ''}`}>
                        <td className="px-6 py-4">
-                          {/* NEW LOGO IMPLEMENTATION */}
                           <div className="flex items-center gap-3">
                              <img
                                src={getLogoCandidates(stock.ticker)[0] || getFallbackAvatar(stock.ticker)}
