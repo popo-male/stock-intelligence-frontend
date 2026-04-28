@@ -91,6 +91,8 @@ function App() {
   const [detailsLoading, setDetailsLoading] = useState(false)
   
   const availableDates = getLast7Days();
+  const [rankDate, setRankDate] = useState(availableDates[0]); // Defaults to today
+  const [rankLoading, setRankLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
 
   const todayString = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -133,6 +135,17 @@ function App() {
     }
     loadData()
   }, [])
+
+  const handleRankDateChange = async (e) => {
+    const newDate = e.target.value;
+    setRankDate(newDate);
+    setRankLoading(true);
+    
+    const data = await fetchHotStocks(newDate);
+    setHotStocks(data.leaderboard || []);
+    
+    setRankLoading(false);
+  };
 
   const handleStockClick = async (ticker) => {
     setSelectedTicker(ticker)
@@ -376,12 +389,36 @@ function App() {
             </div>
           </section>
 
-          {/* Right Column: Mini Watchlist Grid (NOW WITH TEXT LABELS) */}
-          <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
-            <div className="flex items-center gap-2 mb-4">
-              <Flame className="w-5 h-5 text-orange-500" />
-              <h2 className="text-lg font-bold text-slate-800">Sentiment Rank</h2>
+          {/* Right Column: Mini Watchlist Grid */}
+          <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col relative">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2">
+                <Flame className="w-5 h-5 text-orange-500" />
+                <h2 className="text-lg font-bold text-slate-800">Sentiment Rank</h2>
+              </div>
+              
+              {/* NEW DATE SELECTOR */}
+              <select 
+                value={rankDate} 
+                onChange={handleRankDateChange}
+                disabled={rankLoading}
+                className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg px-2 py-1.5 focus:ring-blue-500 focus:border-blue-500 outline-none cursor-pointer disabled:opacity-50"
+              >
+                {availableDates.map(date => (
+                  <option key={date} value={date}>
+                    {date === availableDates[0] ? 'Today' : date}
+                  </option>
+                ))}
+              </select>
             </div>
+
+            {/* Optional Loading Overlay for smooth UX */}
+            {rankLoading && (
+              <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] flex items-center justify-center z-10 rounded-xl">
+                <div className="text-sm font-bold text-slate-500 animate-pulse">Calculating...</div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3 overflow-y-auto flex-grow pr-2">
               {hotStocks.map((stock) => {
                 const isBullish = stock.average_sentiment >= 0.05;
@@ -390,11 +427,12 @@ function App() {
 
                 return (
                   <div key={stock.ticker} onClick={() => handleStockClick(stock.ticker)} className="p-3 border border-slate-100 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all cursor-pointer bg-slate-50 flex flex-col justify-between">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-lg font-extrabold text-slate-800">{stock.ticker}</span>
+                    
+                    {/* MOBILE FIX: flex-wrap ensures badge drops down gracefully if space is tight */}
+                    <div className="flex flex-wrap justify-between items-start gap-1.5 mb-2">
+                      <span className="text-lg font-extrabold text-slate-800 leading-none">{stock.ticker}</span>
                       
-                      {/* NEW EXPLICIT TEXT BADGES */}
-                      <div className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] uppercase tracking-wide font-bold ${
+                      <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide font-bold whitespace-nowrap ${
                         isBullish ? 'bg-green-100 text-green-700' : 
                         isBearish ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-600'
                       }`}>
@@ -403,8 +441,8 @@ function App() {
                         {isNeutral && <Minus className="w-3 h-3" />}
                         {isBullish ? 'Bullish' : isBearish ? 'Bearish' : 'Neutral'}
                       </div>
-
                     </div>
+
                     <div className="text-xs text-slate-500">
                       Score: <span className={`font-bold ${isBullish ? 'text-green-600' : isBearish ? 'text-red-600' : 'text-slate-600'}`}>{stock.average_sentiment.toFixed(2)}</span>
                     </div>

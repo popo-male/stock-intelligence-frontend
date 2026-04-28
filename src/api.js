@@ -1,10 +1,13 @@
 const BASE_URL = import.meta.env.API_BASE_URL.replace(/\/$/, "");
 
-export const fetchHotStocks = async () => {
+export const fetchHotStocks = async (date = null) => {
     try {
-        const response = await fetch(`${BASE_URL}/stocks/hot`);
+        const url = date ? `${BASE_URL}/stocks/hot?target_date=${date}` : `${BASE_URL}/stocks/hot`;
+        const response = await fetch(url);
         return await response.json();
-    } catch (e) { return { leaderboard: [] }; }
+    } catch (e) { 
+        return { leaderboard: [] }; 
+    }
 };
 
 // Added date parameter
